@@ -23,7 +23,7 @@ vegetables = ['Beetroot', 'Cabbage', 'Capsicum', 'Carrot', 'Cauliflower', 'Corn'
 
 def fetch_calories(prediction):
     try:
-        url = 'https://www.google.com/search?&q=calories in ' + prediction
+        url = 'https://www.google.com/search?&q=calories+in+' + prediction
         req = requests.get(url).text
         scrap = BeautifulSoup(req, 'html.parser')
         calories = scrap.find("div", class_="BNeawe iBp4i AP7Wnd").text
