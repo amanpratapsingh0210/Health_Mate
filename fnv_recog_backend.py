@@ -5,6 +5,9 @@ import numpy as np
 import traceback
 import os
 import requests
+import tensorflow as tf
+
+print(f"Running TensorFlow version: {tf.__version__}")
 
 app = Flask(__name__)
 api_key = os.getenv("USDA_API_KEY")
