@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 from PIL import Image
 from keras_preprocessing.image import load_img,img_to_array
@@ -5,6 +6,11 @@ import numpy as np
 from keras.models import load_model
 import requests
 from bs4 import BeautifulSoup
+
+api_key = os.getenv("USDA_API_KEY")
+
+if not api_key:
+    st.error("API key not found. Please set the 'USDA_API_KEY' environment variable.")
 
 model = load_model(r'C:\Users\amanp\OneDrive\COLLEGE\Major Project - Health-Mate\HealthMateCodeSpace\fnv_recognition_model.h5')
 labels = {0: 'apple', 1: 'banana', 2: 'beetroot', 3: 'bell pepper', 4: 'cabbage', 5: 'capsicum', 6: 'carrot',
@@ -21,16 +27,27 @@ vegetables = ['Beetroot', 'Cabbage', 'Capsicum', 'Carrot', 'Cauliflower', 'Corn'
               'Tomato', 'Turnip']
 
 
-def fetch_calories(prediction):
+def fetch_nutritional_values(prediction):
     try:
-        url = 'https://www.google.com/search?&q=calories+in+' + prediction
-        req = requests.get(url).text
-        scrap = BeautifulSoup(req, 'html.parser')
-        calories = scrap.find("div", class_="BNeawe iBp4i AP7Wnd").text
-        return calories
+        api_url = f"https://api.nal.usda.gov/fdc/v1/foods/search?query={prediction}&pageSize=1&dataType=Survey (FNDDS)&api_key={api_key}"
+        response = requests.get(api_url)
+        if response.status_code == 200:
+            data = response.json()
+            if data["foods"]:
+                food = data["foods"][0]
+                nutrients = food.get("foodNutrients", [])
+                nutrition_info = {nutrient["nutrientName"]: nutrient["value"] for nutrient in nutrients}
+                return nutrition_info
+            else:
+                st.error("No nutritional information found.")
+                return None
+        else:
+            st.error("Failed to fetch nutritional information. Check your API key or network connection.")
+            return None
     except Exception as e:
-        st.error("Can't able to fetch the Calories")
+        st.error("An error occurred while fetching nutritional information.")
         print(e)
+        return None
 
 
 def processed_img(img_path):
@@ -67,9 +84,11 @@ def run():
             else:
                 st.info('**Category : Fruit**')
             st.success("**Predicted : " + result + '**')
-            cal = fetch_calories(result)
+            cal = fetch_nutritional_values(result)
             if cal:
-                st.warning('**' + cal + '(100 grams)**')
+                filtered_nutrition = {key: value for key, value in cal.items() if value != 0}
+                nutrition_details = "\n".join([f"{key}: {value}" for key, value in filtered_nutrition.items()])
+                st.warning(f"**Nutritional Information (per 100 grams):**\n{nutrition_details}")
 
 
 run()
