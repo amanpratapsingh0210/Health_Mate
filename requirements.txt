@@ -1,6 +1,4 @@
 flask
 keras
-numpy
-traceback
-os
+numpy=1.23.0
 requests
