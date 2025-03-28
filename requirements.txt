@@ -2,3 +2,4 @@ flask
 keras
 numpy==1.23.0
 requests
+tensorflow
