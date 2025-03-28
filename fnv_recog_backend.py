@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
-from keras.models import load_model
-from keras.preprocessing.image import load_img, img_to_array
+from keras.models import load_model # type: ignore
+from keras.preprocessing.image import load_img, img_to_array # type: ignore
 import numpy as np
 import traceback
 import os
