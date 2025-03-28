@@ -88,7 +88,9 @@ def run():
             if cal:
                 filtered_nutrition = {key: value for key, value in cal.items() if value != 0}
                 nutrition_details = "\n".join([f"{key}: {value}" for key, value in filtered_nutrition.items()])
-                st.warning(f"**Nutritional Information (per 100 grams):**\n{nutrition_details}")
+                st.warning(f"**Nutritional Information (per 100 grams):**")
+                for key, value in filtered_nutrition.items():
+                    st.write(f"- {key}: {value}")
 
 
 run()
