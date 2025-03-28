@@ -1,5 +1,5 @@
 flask
-keras==3.7.0
+keras
 numpy==1.23.0
 requests
 tensorflow==2.18.0
