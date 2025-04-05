@@ -70,7 +70,7 @@ def run():
     img_file = st.file_uploader("Choose an Image", type=["jpg", "png"])
     if img_file is not None:
         img = Image.open(img_file).resize((250, 250))
-        st.image(img, use_column_width=False)
+        st.image(img, use_container_width=True)
         save_image_path = r'C:\Users\amanp\OneDrive\COLLEGE\Major Project - Health-Mate\HealthMateCodeSpace\Images\test_images\test' + img_file.name
         with open(save_image_path, "wb") as f:
             f.write(img_file.getbuffer())
