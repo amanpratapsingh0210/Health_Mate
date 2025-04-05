@@ -3,3 +3,4 @@ keras
 numpy>=1.26.0,<2.1.0
 requests
 tensorflow==2.18.0
+keras-preprocessing
