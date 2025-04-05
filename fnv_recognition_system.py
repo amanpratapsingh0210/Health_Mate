@@ -12,7 +12,7 @@ api_key = os.getenv("USDA_API_KEY")
 if not api_key:
     st.error("API key not found. Please set the 'USDA_API_KEY' environment variable.")
 
-model = load_model(r'C:\Users\amanp\OneDrive\COLLEGE\Major Project - Health-Mate\HealthMateCodeSpace\fnv_recognition_model.h5')
+model = load_model(r'fnv_recognition_model.h5')
 labels = {0: 'apple', 1: 'banana', 2: 'beetroot', 3: 'bell pepper', 4: 'cabbage', 5: 'capsicum', 6: 'carrot',
           7: 'cauliflower', 8: 'chilli pepper', 9: 'corn', 10: 'cucumber', 11: 'eggplant', 12: 'garlic', 13: 'ginger',
           14: 'grapes', 15: 'jalepeno', 16: 'kiwi', 17: 'lemon', 18: 'lettuce',
