@@ -11,6 +11,8 @@ api_key = os.getenv("USDA_API_KEY")
 
 if not api_key:
     st.error("API key not found. Please set the 'USDA_API_KEY' environment variable.")
+    
+st.set_page_config(page_title="Fruits-Vegetable Recognition System", page_icon="🍍", layout="wide")
 
 model = load_model(r'fnv_recognition_model.h5')
 labels = {0: 'apple', 1: 'banana', 2: 'beetroot', 3: 'bell pepper', 4: 'cabbage', 5: 'capsicum', 6: 'carrot',
