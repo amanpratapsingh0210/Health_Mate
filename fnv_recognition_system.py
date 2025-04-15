@@ -5,16 +5,15 @@ from keras_preprocessing.image import load_img,img_to_array
 import numpy as np
 from keras.models import load_model # type: ignore
 import requests
-from bs4 import BeautifulSoup
+
+st.set_page_config(page_title="Fruits-Vegetable Recognition System", page_icon="🍍", layout="wide")
 
 api_key = os.getenv("USDA_API_KEY")
 
 if not api_key:
     st.error("API key not found. Please set the 'USDA_API_KEY' environment variable.")
     
-st.set_page_config(page_title="Fruits-Vegetable Recognition System", page_icon="🍍", layout="wide")
-
-model = load_model(r'fnv_recognition_model.h5')
+model = load_model(r'fruit_veg_model_updated.h5')
 labels = {0: 'apple', 1: 'banana', 2: 'beetroot', 3: 'bell pepper', 4: 'cabbage', 5: 'capsicum', 6: 'carrot',
           7: 'cauliflower', 8: 'chilli pepper', 9: 'corn', 10: 'cucumber', 11: 'eggplant', 12: 'garlic', 13: 'ginger',
           14: 'grapes', 15: 'jalepeno', 16: 'kiwi', 17: 'lemon', 18: 'lettuce',
@@ -53,18 +52,21 @@ def fetch_nutritional_values(prediction):
 
 
 def processed_img(img_path):
+    class_labels = list(labels.values())
     img = load_img(img_path, target_size=(224, 224, 3))
     img = img_to_array(img)
-    img = img / 255
-    img = np.expand_dims(img, [0])
-    answer = model.predict(img)
-    y_class = answer.argmax(axis=-1)
-    print(y_class)
-    y = " ".join(str(x) for x in y_class)
-    y = int(y)
-    res = labels[y]
-    print(res)
-    return res.capitalize()
+    img = img / 255.0
+    img = np.expand_dims(img, axis=0)
+    
+    predictions = model.predict(img)
+    confidence = np.max(predictions)
+    predicted_class = np.argmax(predictions)
+    
+    if confidence < 0.6:
+        return "Unknown", confidence
+    else:
+        result_label = labels[predicted_class].capitalize()
+        return result_label, confidence
 
 
 def run():
@@ -72,27 +74,27 @@ def run():
     img_file = st.file_uploader("Choose an Image", type=["jpg", "png"])
     if img_file is not None:
         img = Image.open(img_file).resize((250, 250))
-        st.image(img, use_container_width=True)
-        save_image_path = r'C:\Users\amanp\OneDrive\COLLEGE\Major Project - Health-Mate\HealthMateCodeSpace\Images\test_images\test' + img_file.name
+        st.image(img)
+        save_image_path = os.path.join("/tmp", "test_" + img_file.name)
         with open(save_image_path, "wb") as f:
             f.write(img_file.getbuffer())
 
-        # if st.button("Predict"):
         if img_file is not None:
-            result = processed_img(save_image_path)
-            print(result)
-            if result in vegetables:
+            result, confidence = processed_img(save_image_path)
+            if result == "Unknown":
+                st.error('**This image is not recognized as a fruit or vegetable.**')
+            elif result in vegetables:
                 st.info('**Category : Vegetables**')
             else:
                 st.info('**Category : Fruit**')
-            st.success("**Predicted : " + result + '**')
-            cal = fetch_nutritional_values(result)
-            if cal:
-                filtered_nutrition = {key: value for key, value in cal.items() if value != 0}
-                nutrition_details = "\n".join([f"{key}: {value}" for key, value in filtered_nutrition.items()])
-                st.warning(f"**Nutritional Information (per 100 grams):**")
-                for key, value in filtered_nutrition.items():
-                    st.write(f"- {key}: {value}")
+            st.success(f"**Predicted : {result} ({confidence*100:.2f}% confidence)**")
+            if result != "Unknown":
+                cal = fetch_nutritional_values(result)
+                if cal:
+                    filtered_nutrition = {key: value for key, value in cal.items() if value != 0}
+                    st.warning(f"**Nutritional Information (per 100 grams):**")
+                    for key, value in filtered_nutrition.items():
+                        st.write(f"- {key}: {value}")
 
 
 run()
