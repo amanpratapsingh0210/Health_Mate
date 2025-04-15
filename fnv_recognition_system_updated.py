@@ -6,13 +6,13 @@ import numpy as np
 from keras.models import load_model # type: ignore
 import requests
 
+st.set_page_config(page_title="Fruits-Vegetable Recognition System", page_icon="🍍", layout="wide")
+
 api_key = os.getenv("USDA_API_KEY")
 
 if not api_key:
     st.error("API key not found. Please set the 'USDA_API_KEY' environment variable.")
     
-st.set_page_config(page_title="Fruits-Vegetable Recognition System", page_icon="🍍", layout="wide")
-
 model = load_model(r'fruit_veg_model_updated.h5')
 labels = {0: 'apple', 1: 'banana', 2: 'beetroot', 3: 'bell pepper', 4: 'cabbage', 5: 'capsicum', 6: 'carrot',
           7: 'cauliflower', 8: 'chilli pepper', 9: 'corn', 10: 'cucumber', 11: 'eggplant', 12: 'garlic', 13: 'ginger',
