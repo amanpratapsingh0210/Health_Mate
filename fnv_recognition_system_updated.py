@@ -3,7 +3,7 @@ import streamlit as st
 from PIL import Image
 from keras_preprocessing.image import load_img,img_to_array
 import numpy as np
-from keras.models import load_model
+from keras.models import load_model # type: ignore
 import requests
 
 api_key = os.getenv("USDA_API_KEY")
