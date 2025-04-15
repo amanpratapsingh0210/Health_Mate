@@ -75,7 +75,7 @@ def run():
     if img_file is not None:
         img = Image.open(img_file).resize((250, 250))
         st.image(img)
-        save_image_path = "test_" + img_file.name
+        save_image_path = os.path.join("/tmp", "test_" + img_file.name)
         with open(save_image_path, "wb") as f:
             f.write(img_file.getbuffer())
 
