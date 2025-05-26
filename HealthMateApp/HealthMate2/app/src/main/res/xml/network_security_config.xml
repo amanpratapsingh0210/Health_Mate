@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <!-- Added your local network IP for cleartext traffic -->
+        <domain includeSubdomains="true">192.168.153.242</domain>
+        <!-- If testing on a physical device, add your local network IP here, e.g., -->
+        <!-- <domain includeSubdomains="true">192.168.1.100</domain> -->
+    </domain-config>
+</network-security-config> 

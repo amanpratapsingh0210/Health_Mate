@@ -2,10 +2,16 @@ package com.healthmate.app.ui.home.scanner
 
 import android.Manifest
 import android.content.Context
-import android.net.Uri
-import android.widget.Toast
+import android.content.pm.PackageManager
+import android.os.Build
+import android.util.Log
+import android.view.ViewGroup
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -40,6 +47,7 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
@@ -61,678 +69,261 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Locale
+import android.widget.Toast
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.launch
+import android.media.MediaActionSound
+import androidx.navigation.NavController
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.healthmate.app.ui.home.nutrition.NutritionResultScreen
+import com.healthmate.app.ui.SharedNutritionViewModel
+import android.net.Uri
+
+private const val TAG = "ScannerScreen"
 
 @Composable
-fun ScannerScreen() {
-    var scanState by remember { mutableStateOf<ScanState>(ScanState.Initial) }
-    var showResultDialog by remember { mutableStateOf(false) }
-    var showCameraView by remember { mutableStateOf(false) }
-    var capturedImageUri by remember { mutableStateOf<Uri?>(null) }
-    
+fun ScannerScreen(
+    navController: NavController,
+    viewModel: ScannerViewModel = hiltViewModel(),
+    sharedViewModel: SharedNutritionViewModel = hiltViewModel()
+) {
+    val scanState by viewModel.scanState.collectAsStateWithLifecycle()
+
+    // Log state changes and trigger navigation
+    LaunchedEffect(scanState) {
+        // Capture scanState in a local variable for stable access
+        val currentState = scanState
+        Log.d(TAG, "ScanState changed to: $currentState")
+        when (currentState) {
+            ScanState.Initial -> {
+                 Log.d(TAG, "State: Initial")
+                 // Optionally clear results in shared ViewModel when returning to initial state
+                 sharedViewModel.clearResults()
+            }
+            ScanState.Scanning -> Log.d(TAG, "State: Scanning")
+            is ScanState.ResultList -> {
+                Log.d(TAG, "State: ResultList with ${currentState.results.size} results")
+                // Set results in shared ViewModel and navigate
+                sharedViewModel.setAnalysisResults(currentState.results)
+                navController.navigate("nutrition_results") {
+                    // Optional: Pop up to the scanner screen to prevent going back to the loading state
+                    popUpTo("scanner") { inclusive = true }
+                }
+            }
+            is ScanState.Error -> Log.e(TAG, "State: Error - ${currentState.message}")
+        }
+    }
+
+    SnapFoodCameraUI(navController, viewModel)
+}
+
+@Composable
+fun SnapFoodCameraUI(
+    navController: NavController,
+    viewModel: ScannerViewModel
+) {
     val context = LocalContext.current
-    
-    // Permission launchers and gallery launcher - order matters!
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var hasCameraPermission by remember { mutableStateOf(false) }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            showCameraView = true
-        } else {
-            Toast.makeText(context, "Camera permission is required", Toast.LENGTH_SHORT).show()
-        }
-    }
-    
-    // Define galleryLauncher first since it's used in galleryPermissionLauncher
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { granted -> hasCameraPermission = granted }
+    )
+    val coroutineScope = rememberCoroutineScope()
+    var takePicture: (() -> Unit)? by remember { mutableStateOf(null) }
+    val shutterSound = remember { MediaActionSound() }
+
+    // Gallery picker launcher
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
-            capturedImageUri = it
-            scanState = ScanState.Scanning
-            // Simulate scan completion after brief delay
-            simulateScanCompletion { resultState ->
-                scanState = resultState
-                showResultDialog = true
-            }
+            Log.d(TAG, "Image selected from gallery: $uri")
+            // Directly trigger API call with the selected image Uri
+            viewModel.analyzeImage(it)
+            Toast.makeText(context, "Image selected from gallery! Processing...", Toast.LENGTH_SHORT).show()
         }
     }
-    
-    val galleryPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            // Launch gallery picker
-            galleryLauncher.launch("image/*")
+
+    // Request permission on first launch
+    LaunchedEffect(Unit) {
+        val permission = Manifest.permission.CAMERA
+        hasCameraPermission = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+        if (!hasCameraPermission) {
+            cameraPermissionLauncher.launch(permission)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Camera preview full screen
+        if (hasCameraPermission) {
+            AndroidView(
+                factory = { context: Context ->
+                    val previewView = PreviewView(context).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        scaleType = PreviewView.ScaleType.FILL_CENTER
+                    }
+                    val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+                    cameraProviderFuture.addListener({
+                        val cameraProvider = cameraProviderFuture.get()
+                        val preview = Preview.Builder().build().also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
+                        }
+                        val imageCaptureConfig = ImageCapture.Builder().build()
+                        // Set the takePicture lambda to use this imageCaptureConfig
+                        takePicture = {
+                            val photoFile = File(
+                                context.cacheDir,
+                                "IMG_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(System.currentTimeMillis())}.jpg"
+                            )
+                            val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+                            imageCaptureConfig.takePicture(
+                                outputOptions,
+                                ContextCompat.getMainExecutor(context),
+                                object : ImageCapture.OnImageSavedCallback {
+                                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                                        shutterSound.play(MediaActionSound.SHUTTER_CLICK)
+                                        Log.d(TAG, "Image captured from camera: ${output.savedUri}")
+                                        // Directly trigger API call with the captured image Uri
+                                        output.savedUri?.let { uri ->
+                                            viewModel.analyzeImage(uri)
+                                            Toast.makeText(context, "Image saved! Processing...", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                    override fun onError(exception: ImageCaptureException) {
+                                        Toast.makeText(context, "Capture failed: ${exception.message}", Toast.LENGTH_SHORT).show()
+                                        Log.e(TAG, "Camera capture failed: ${exception.message}", exception)
+                                    }
+                                }
+                            )
+                        }
+                        try {
+                            cameraProvider.unbindAll()
+                            cameraProvider.bindToLifecycle(
+                                lifecycleOwner,
+                                CameraSelector.DEFAULT_BACK_CAMERA,
+                                preview,
+                                imageCaptureConfig
+                            )
+                        } catch (exc: Exception) {
+                            Log.e("CameraX", "Use case binding failed", exc)
+                        }
+                    }, ContextCompat.getMainExecutor(context))
+                    previewView
+                },
+                modifier = Modifier.fillMaxSize()
+            )
         } else {
-            Toast.makeText(context, "Storage permission is required", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        when {
-            showCameraView -> {
-                // Simple camera view placeholder until we fix CameraX integration
-                CameraViewPlaceholder(
-                    onImageCaptured = { 
-                        showCameraView = false
-                        // Just simulate a capture for now
-                        scanState = ScanState.Scanning
-                        simulateScanCompletion { resultState ->
-                            scanState = resultState
-                            showResultDialog = true
-                        }
-                    },
-                    onClose = {
-                        showCameraView = false
-                    }
-                )
-            }
-            else -> {
-                when (scanState) {
-                    is ScanState.Initial -> {
-                        InitialScannerView(
-                            onTakePhoto = {
-                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                            },
-                            onChooseFromGallery = {
-                                val permission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                    Manifest.permission.READ_MEDIA_IMAGES
-                                } else {
-                                    Manifest.permission.READ_EXTERNAL_STORAGE
-                                }
-                                galleryPermissionLauncher.launch(permission)
-                            }
-                        )
-                    }
-                    is ScanState.Scanning -> {
-                        ScanningView(
-                            onScanComplete = {
-                                // After a brief delay, we'd show the results
-                                scanState = ScanState.Result(
-                                    foodName = "Grilled Chicken Salad",
-                                    calories = 320,
-                                    carbs = 12.5,
-                                    protein = 38.0,
-                                    fat = 14.2
-                                )
-                                showResultDialog = true
-                            }
-                        )
-                    }
-                    is ScanState.Result -> {
-                        ResultView(scanState as ScanState.Result) {
-                            scanState = ScanState.Initial
-                        }
-                        
-                        if (showResultDialog) {
-                            FoodDetailsDialog(
-                                foodData = scanState as ScanState.Result,
-                                onDismiss = { showResultDialog = false },
-                                onConfirm = { 
-                                    showResultDialog = false
-                                    // Here you would add this to the user's food log
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun InitialScannerView(
-    onTakePhoto: () -> Unit,
-    onChooseFromGallery: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        ElevatedCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-                .shadow(
-                    elevation = 10.dp,
-                    shape = RoundedCornerShape(16.dp),
-                    spotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                ),
-            elevation = CardDefaults.elevatedCardElevation(
-                defaultElevation = 8.dp,
-                pressedElevation = 12.dp
-            ),
-            colors = CardDefaults.elevatedCardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            ),
-            shape = RoundedCornerShape(16.dp)
-        ) {
+            // Permission not granted
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.primary,
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                            )
-                        )
-                    )
-            ) {
-                Column(
-                    modifier = Modifier
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Camera,
-                        contentDescription = "Camera",
-                        tint = Color.White,
-                        modifier = Modifier.size(80.dp)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    Text(
-                        text = "Food Scanner",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    Text(
-                        text = "Scan food to get nutritional information instantly",
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                        color = Color.White.copy(alpha = 0.9f)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(24.dp))
-                    
-                    Button(
-                        onClick = onTakePhoto,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(
-                                elevation = 4.dp,
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Camera,
-                            contentDescription = "Take Photo"
-                        )
-                        Spacer(modifier = Modifier.size(8.dp))
-                        Text("Take Photo")
-                    }
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    Button(
-                        onClick = onChooseFromGallery,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .shadow(
-                                elevation = 4.dp,
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PhotoLibrary,
-                            contentDescription = "Choose from Gallery"
-                        )
-                        Spacer(modifier = Modifier.size(8.dp))
-                        Text("Choose from Gallery")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun CameraViewPlaceholder(
-    onImageCaptured: () -> Unit,
-    onClose: () -> Unit
-) {
-    Box(modifier = Modifier
-        .fillMaxSize()
-        .background(Color.Black)) {
-        
-        // Camera controls overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            contentAlignment = Alignment.BottomCenter
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 24.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Close button
-                FloatingActionButton(
-                    onClick = onClose,
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = Color.White
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close Camera"
-                    )
-                }
-                
-                // Capture button
-                FloatingActionButton(
-                    onClick = onImageCaptured,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White,
-                    modifier = Modifier.size(72.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Camera,
-                        contentDescription = "Take Photo",
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-                
-                // Placeholder for symmetry
-                Box(modifier = Modifier.size(56.dp))
-            }
-        }
-        
-        // Camera instructions overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = 150.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Point camera at food to capture",
-                style = MaterialTheme.typography.bodyLarge,
-                color = Color.White,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-private fun simulateScanCompletion(onComplete: (ScanState.Result) -> Unit) {
-    // In a real app, this would be a call to an ML model or API
-    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-        onComplete(
-            ScanState.Result(
-                foodName = "Grilled Chicken Salad",
-                calories = 320,
-                carbs = 12.5,
-                protein = 38.0,
-                fat = 14.2
-            )
-        )
-    }, 2000) // 2 second delay to simulate processing
-}
-
-@Composable
-fun ScanningView(
-    onScanComplete: () -> Unit
-) {
-    // In a real app, this would analyze the image with ML
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(400.dp)
-                .padding(16.dp)
-                .border(
-                    width = 3.dp,
-                    color = MaterialTheme.colorScheme.primary,
-                    shape = RoundedCornerShape(16.dp)
-                )
-                .shadow(
-                    elevation = 8.dp,
-                    shape = RoundedCornerShape(16.dp)
-                ),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Box(
+                    .fillMaxSize()
+                    .background(Color.Black),
                 contentAlignment = Alignment.Center
             ) {
-                // Fallback to black background
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.8f))
+                Text(
+                    text = "Camera permission required",
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyLarge
                 )
-                
-                // Scanning animation overlay
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.5f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(80.dp)
-                        )
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Text(
-                            text = "Analyzing your food...",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White
-                        )
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        LinearProgressIndicator(
-                            modifier = Modifier
-                                .padding(16.dp)
-                                .fillMaxWidth(0.7f),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        
-                        // Simulate scan completion
-                        LaunchedEffect(Unit) {
-                            kotlinx.coroutines.delay(2000)
-                            onScanComplete()
-                        }
-                    }
-                }
             }
         }
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        Text(
-            text = "Position food in the center of the frame",
-            style = MaterialTheme.typography.bodyLarge
-        )
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Text(
-            text = "Our AI will analyze and provide nutritional details",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 32.dp)
-        )
-    }
-}
-
-@Composable
-fun ResultView(result: ScanState.Result, onNewScan: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = "Scan Result",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        // Food summary
-        ElevatedCard(
+        // Top bar: Back (X), Snap Food title, Confirm (check) - now only show back and confirm as overlay icons
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .shadow(
-                    elevation = 8.dp,
-                    shape = RoundedCornerShape(16.dp)
-                ),
-            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 6.dp),
-            shape = RoundedCornerShape(16.dp)
+                .padding(top = 32.dp, start = 16.dp, end = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
+            // Back button
+            IconButton(
+                onClick = { navController.popBackStack() },
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = result.foodName,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    Text(
-                        text = "${result.calories} calories",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Nutritional breakdown
-        NutrientInfoRow("Carbs", "${result.carbs}g", MaterialTheme.colorScheme.primary)
-        NutrientInfoRow("Protein", "${result.protein}g", MaterialTheme.colorScheme.secondary)
-        NutrientInfoRow("Fat", "${result.fat}g", MaterialTheme.colorScheme.tertiary)
-        
-        Spacer(modifier = Modifier.height(24.dp))
-        
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Button(
-                onClick = onNewScan,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Scan Again")
-            }
-            
-            Spacer(modifier = Modifier.size(16.dp))
-            
-            Button(
-                onClick = { /* Add to log */ },
-                modifier = Modifier.weight(1f)
+                    .size(48.dp)
+                    .background(Color.Transparent)
             ) {
                 Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Add to diary"
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Back",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
                 )
-                Spacer(modifier = Modifier.size(4.dp))
-                Text("Add to Diary")
+            }
+            // Confirm button (optional, can be used for future features)
+            IconButton(
+                onClick = { /* TODO: Handle confirm if needed */ },
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color.Transparent)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Confirm",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
             }
         }
-    }
-}
-
-@Composable
-fun NutrientInfoRow(label: String, value: String, color: Color) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // Bottom capture and gallery buttons
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 48.dp)
+                .align(Alignment.BottomCenter),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = { galleryLauncher.launch("image/*") },
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Color.Transparent)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PhotoLibrary,
+                    contentDescription = "Gallery",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+            Spacer(modifier = Modifier.size(32.dp))
             Box(
                 modifier = Modifier
-                    .size(12.dp)
+                    .size(80.dp)
+                    .border(
+                        width = 4.dp,
+                        color = Color.White,
+                        shape = CircleShape
+                    )
+                    .padding(4.dp)
                     .clip(CircleShape)
-                    .background(color)
-            )
-            
-            Spacer(modifier = Modifier.size(8.dp))
-            
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyLarge
-            )
-        }
-        
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Bold
-        )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun FoodDetailsDialog(
-    foodData: ScanState.Result,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit
-) {
-    var quantity by remember { mutableStateOf("1") }
-    var mealType by remember { mutableStateOf("Lunch") }
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Add to Food Diary",
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column {
-                Text(
-                    text = foodData.foodName,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium
+                    .background(Color.White)
+                    .clickable {
+                        takePicture?.invoke()
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(60.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
                 )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = "${foodData.calories} calories per serving",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                OutlinedTextField(
-                    value = quantity,
-                    onValueChange = { quantity = it },
-                    label = { Text("Quantity (servings)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Text(
-                    text = "Meal Type",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // In a real app, this would be a dropdown or radio buttons
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    MealTypeChip(
-                        label = "Breakfast",
-                        selected = mealType == "Breakfast",
-                        onClick = { mealType = "Breakfast" }
-                    )
-                    MealTypeChip(
-                        label = "Lunch",
-                        selected = mealType == "Lunch",
-                        onClick = { mealType = "Lunch" }
-                    )
-                    MealTypeChip(
-                        label = "Dinner",
-                        selected = mealType == "Dinner",
-                        onClick = { mealType = "Dinner" }
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = onConfirm) {
-                Text("Add to Diary")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
             }
         }
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun MealTypeChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .padding(4.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
-        onClick = onClick
-    ) {
-        Text(
-            text = label,
-            color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.bodyMedium
-        )
     }
-}
-
-sealed class ScanState {
-    object Initial : ScanState()
-    object Scanning : ScanState()
-    data class Result(
-        val foodName: String,
-        val calories: Int,
-        val carbs: Double,
-        val protein: Double,
-        val fat: Double
-    ) : ScanState()
 } 
