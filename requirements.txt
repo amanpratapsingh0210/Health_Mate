@@ -2,7 +2,7 @@ flask
 keras
 numpy>=1.26.0,<2.1.0
 requests
-tensorflow==2.18.0
+tensorflow==2.15.0
 keras-preprocessing
 streamlit
 beautifulsoup4
