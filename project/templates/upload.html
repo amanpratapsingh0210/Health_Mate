@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Food Image Analyzer</title>
+</head>
+<body>
+  <h2>Upload a Food Image</h2>
+  <form method="post" action="/analyze" enctype="multipart/form-data">
+    <input type="file" name="image" accept="image/*" required>
+    <button type="submit">Analyze</button>
+  </form>
+</body>
+</html>

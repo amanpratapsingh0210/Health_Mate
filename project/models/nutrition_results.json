@@ -1,0 +1,83 @@
+{
+  "bread_2ba79186.jpg": {
+    "label": "Lemon",
+    "nutrition": {
+      "calories": 29,
+      "protein": 1.1,
+      "carbs": 9.3,
+      "fat": 0.3
+    }
+  },
+  "bread_478a71db.jpg": {
+    "label": "Papad",
+    "nutrition": {
+      "calories": 470,
+      "protein": 20,
+      "carbs": 52,
+      "fat": 28
+    }
+  },
+  "bread_b3a7b61c.jpg": {
+    "label": "Banana split",
+    "nutrition": {
+      "calories": 250,
+      "protein": 4,
+      "carbs": 35,
+      "fat": 12
+    }
+  },
+  "curry_30499a8f.jpg": {
+    "label": "Gajar Halwa",
+    "nutrition": {
+      "calories": 279,
+      "protein": 3.4,
+      "carbs": 33.7,
+      "fat": 14.8
+    }
+  },
+  "curry_49e458f6.jpg": {
+    "label": "Beetroot sabzi",
+    "nutrition": {
+      "calories": 75,
+      "protein": 1.5,
+      "carbs": 7.0,
+      "fat": 5.0
+    }
+  },
+  "curry_4bc292c6.jpg": {
+    "label": "Dal Fry",
+    "nutrition": {
+      "calories": 155,
+      "protein": 7.5,
+      "carbs": 16.5,
+      "fat": 6.0
+    }
+  },
+  "rice_e5715ed8.jpg": {
+    "label": "Rice",
+    "nutrition": {
+      "calories": 130,
+      "protein": 2.7,
+      "carbs": 28.2,
+      "fat": 0.3
+    }
+  },
+  "salad_945b4d11.jpg": {
+    "label": "Kachumber",
+    "nutrition": {
+      "calories": 22,
+      "protein": 0.8,
+      "carbs": 4.8,
+      "fat": 0.1
+    }
+  },
+  "vegitable_mix_0acbb0f1.jpg": {
+    "label": "Dill eggs",
+    "nutrition": {
+      "calories": 155,
+      "protein": 12.6,
+      "carbs": 1.1,
+      "fat": 10.6
+    }
+  }
+}
