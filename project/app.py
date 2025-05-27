@@ -6,27 +6,26 @@ import numpy as np
 import google.generativeai as genai
 import re
 
-# ========== CONFIG ==========
+
 UPLOAD_FOLDER = "static"
 INPUT_DIR = "input_images"
 OUTPUT_DIR = "output_items"
 MODEL_PATH = r"weights/best.pt"
 GEMINI_API_KEY = "AIzaSyBkLQnhC1jFpjE3GMVzWVgFudWchFcTCvw"
 
-# ========== INIT ==========
+
 app = Flask(__name__)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Load YOLOv8 model
+
 seg_model = YOLO(MODEL_PATH)
 
-# Configure Gemini
+
 genai.configure(api_key=GEMINI_API_KEY)
 g_model = genai.GenerativeModel("gemini-2.0-flash-lite")
 
-# ========== GEMINI HELPERS ==========
 
 def recognize_food_item(img_path):
     prompt = (
@@ -49,7 +48,6 @@ def get_nutritional_info(food_name):
     except:
         return None
 
-# ========== SEGMENTATION ==========
 
 def compute_iou(mask1, mask2):
     inter = np.logical_and(mask1, mask2).sum()
@@ -83,7 +81,6 @@ def segment_and_save_items(img_path, output_dir, iou_thresh=0.5):
         filenames.append(save_path)
     return filenames
 
-# ========== FLASK ROUTE ==========
 
 @app.route("/", methods=["GET"])
 def home():
@@ -95,17 +92,13 @@ def analyze_image():
     if not file:
         return jsonify({"error": "No image uploaded"}), 400
 
-    # Save uploaded image
     image_path = os.path.join(UPLOAD_FOLDER, "uploaded_image.jpg")
     file.save(image_path)
 
-    # Clear previous outputs
     for f in os.listdir(OUTPUT_DIR): os.remove(os.path.join(OUTPUT_DIR, f))
 
-    # Step 1: Segment the image
     item_images = segment_and_save_items(image_path, OUTPUT_DIR)
     
-    # Step 2 & 3: Classify and get nutrition
     results = []
     for img in item_images:
         label = recognize_food_item(img)
@@ -118,6 +111,6 @@ def analyze_image():
 
     return jsonify(results)
 
-# ========== MAIN ==========
+
 if __name__ == "__main__":
     app.run(debug=True)
