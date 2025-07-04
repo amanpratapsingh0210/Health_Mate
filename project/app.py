@@ -54,21 +54,30 @@ def compute_iou(mask1, mask2):
     union = np.logical_or(mask1, mask2).sum()
     return inter / union if union else 0
 
-def segment_and_save_items(img_path, output_dir, iou_thresh=0.5):
+def segment_and_save_items(img_path, output_dir, iou_thresh=0.3):
     results = seg_model(img_path)[0]
     image = cv2.imread(img_path)
     masks = results.masks.data.cpu().numpy() if results.masks else []
     boxes = results.boxes.xyxy.cpu().numpy() if results.boxes else []
-    kept_masks, kept_boxes = [], []
+    classes = results.boxes.cls.cpu().numpy() if results.boxes else []
+    
+    kept_masks, kept_boxes, kept_classes  = [], [], []
 
     for i, mask in enumerate(masks):
+        class_id = int(classes[i])
+        class_name = seg_model.names[class_id]
+
+        if class_name.lower() == "utensils":
+            continue
+        
         if any(compute_iou(mask, kmask) > iou_thresh for kmask in kept_masks):
             continue
         kept_masks.append(mask)
         kept_boxes.append(boxes[i])
+        kept_classes.append(class_name)
 
     filenames = []
-    for i, (mask, box) in enumerate(zip(kept_masks, kept_boxes)):
+    for i, (mask, box, class_name) in enumerate(zip(kept_masks, kept_boxes, kept_classes)):
         x1, y1, x2, y2 = map(int, box)
         resized_mask = cv2.resize(mask.astype(np.uint8), (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
         item = cv2.bitwise_and(image, image, mask=resized_mask)
